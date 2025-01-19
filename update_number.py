@@ -83,6 +83,17 @@ def update_cron_with_random_time():
 
 def main(request):
     try:
+        print("Function start")
+        # initialize git if this is the first run
+        if not os.path.exists(".git"):
+            print("Initializing git")
+            subprocess.run(["git", "init"])
+      
+            # Create a basic .gitignore file
+            with open(".gitignore", "w") as f:
+                f.write("venv/\n")
+                f.write("__pycache__/\n")
+
         current_number = read_number()
         new_number = current_number + 1
         write_number(new_number)

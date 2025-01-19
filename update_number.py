@@ -1,32 +1,27 @@
 #!/usr/bin/env python3
 import os
-import random
 import subprocess
 from datetime import datetime
-
-script_dir = os.path.dirname(os.path.abspath(__file__))
-os.chdir(script_dir)
+import google.generativeai as genai
+from google.generativeai.types import GenerationConfig
 
 
 def read_number():
-    with open("number.txt", "r") as f:
+    with open("number.txt", "r", encoding="utf-8") as f:
         return int(f.read().strip())
 
 
 def write_number(num):
-    with open("number.txt", "w") as f:
+    with open("number.txt", "w", encoding="utf-8") as f:
         f.write(str(num))
 
 
-def generate_random_commit_message():
-    from transformers import pipeline
+def generate_random_commit_message(gemini_api_key):
+    genai.configure(api_key=gemini_api_key)
+    model = genai.GenerativeModel("gemini-pro")
 
-    generator = pipeline(
-        "text-generation",
-        model="openai-community/gpt2",
-    )
     prompt = """
-        Generate a Git commit message following the Conventional Commits standard. The message should include a type, an optional scope, and a subject.Please keep it short. Here are some examples:
+        Generate a Git commit message following the Conventional Commits standard. The message should include a type, an optional scope, and a subject. Please keep it short. Here are some examples:
 
         - feat(auth): add user authentication module
         - fix(api): resolve null pointer exception in user endpoint
@@ -36,36 +31,41 @@ def generate_random_commit_message():
 
         Now, generate a new commit message:
     """
-    generated = generator(
-        prompt,
-        max_new_tokens=50,
-        num_return_sequences=1,
-        temperature=0.9,  # Slightly higher for creativity
-        top_k=50,  # Limits sampling to top 50 logits
-        top_p=0.9,  # Nucleus sampling for diversity
-        truncation=True,
+    generation_config = GenerationConfig(
+        temperature=0.9,
+        top_p=0.9,
+        top_k=50,
+        max_output_tokens=50,
     )
-    text = generated[0]["generated_text"]
+    response = model.generate_content(prompt, generation_config=generation_config)
+    text = response.text
 
     if "- " in text:
         return text.rsplit("- ", 1)[-1].strip()
     else:
-        raise ValueError(f"Unexpected generated text {text}")
+        return text.strip()
 
 
-def git_commit():
+def git_commit(github_pat):
     # Stage the changes
     subprocess.run(["git", "add", "number.txt"])
     # Create commit with current date
     if "FANCY_JOB_USE_LLM" in os.environ:
-        commit_message = generate_random_commit_message()
+        commit_message = generate_random_commit_message(os.environ.get("GEMINI_API_KEY"))
     else:
         date = datetime.now().strftime("%Y-%m-%d")
         commit_message = f"Update number: {date}"
+    subprocess.run(["git", "config", "--global", "user.name", "Automated Commit Bot"])
+    subprocess.run(["git", "config", "--global", "user.email", "bot@example.com"])
     subprocess.run(["git", "commit", "-m", commit_message])
 
+    # Ensure git actions are done using the specified github pat
+    github_repo = os.environ.get("GITHUB_REPOSITORY")
+    github_username = os.environ.get("GITHUB_USERNAME")
+    remote_url = f"https://{github_username}:{github_pat}@github.com/{github_repo}.git"
+    subprocess.run(["git", "remote", "set-url", "origin", remote_url])
 
-def git_push():
+def git_push(github_pat):
     # Push the committed changes to GitHub
     result = subprocess.run(["git", "push"], capture_output=True, text=True)
     if result.returncode == 0:
@@ -74,52 +74,34 @@ def git_push():
         print("Error pushing to GitHub:")
         print(result.stderr)
 
-
 def update_cron_with_random_time():
-    # Generate random hour (0-23) and minute (0-59)
-    random_hour = random.randint(0, 23)
-    random_minute = random.randint(0, 59)
-
-    # Define the new cron job command
-    new_cron_command = f"{random_minute} {random_hour} * * * cd {script_dir} && python3 {os.path.join(script_dir, 'update_number.py')}\n"
-
-    # Get the current crontab
-    cron_file = "/tmp/current_cron"
-    os.system(
-        f"crontab -l > {cron_file} 2>/dev/null || true"
-    )  # Save current crontab, or create a new one if empty
-
-    # Update the crontab file
-    with open(cron_file, "r") as file:
-        lines = file.readlines()
-
-    with open(cron_file, "w") as file:
-        for line in lines:
-            # Remove existing entry for `update_number.py` if it exists
-            if "update_number.py" not in line:
-                file.write(line)
-        # Add the new cron job at the random time
-        file.write(new_cron_command)
-
-    # Load the updated crontab
-    os.system(f"crontab {cron_file}")
-    os.remove(cron_file)
-
-    print(f"Cron job updated to run at {random_hour}:{random_minute} tomorrow.")
+    # We no longer manage the cron schedule this way
+    # Cloud Scheduler will handle timing.
+    print("Cron timing managed by Google Cloud Scheduler")
+    pass
 
 
-def main():
+def main(request):
     try:
         current_number = read_number()
         new_number = current_number + 1
         write_number(new_number)
-        git_commit()
-        git_push()
+        github_pat = os.environ.get("GITHUB_PAT")
+        git_commit(github_pat)
+        git_push(github_pat)
         update_cron_with_random_time()
+
+        return 'Success'
     except Exception as e:
         print(f"Error: {str(e)}")
-        exit(1)
+        return f"Error: {str(e)}", 500
 
 
 if __name__ == "__main__":
-    main()
+    # This part is for local testing, not for deployment to Cloud Functions
+    # Set up a test number.txt file
+    if not os.path.exists("number.txt"):
+        with open("number.txt", "w") as f:
+            f.write("0")
+
+    main(None)

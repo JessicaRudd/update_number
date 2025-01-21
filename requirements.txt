@@ -1,1 +1,4 @@
 google-generativeai
+google-cloud-scheduler
+google-auth
+requests

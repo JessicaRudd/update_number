@@ -74,12 +74,6 @@ def git_push(github_pat):
         print("Error pushing to GitHub:")
         print(result.stderr)
 
-def update_cron_with_random_time():
-    # We no longer manage the cron schedule this way
-    # Cloud Scheduler will handle timing.
-    print("Cron timing managed by Google Cloud Scheduler")
-    pass
-
 
 def main(request):
     try:
@@ -100,7 +94,6 @@ def main(request):
         github_pat = os.environ.get("GITHUB_PAT")
         git_commit(github_pat)
         git_push(github_pat)
-        update_cron_with_random_time()
 
         return 'Success'
     except Exception as e:
